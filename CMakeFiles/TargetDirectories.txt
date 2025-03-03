@@ -1,0 +1,5 @@
+C:/Users/Caska/Desktop/projects/2025-agrobot-pid-autotune/CMakeFiles/2025-agrobot-pid-autotune.dir
+C:/Users/Caska/Desktop/projects/2025-agrobot-pid-autotune/CMakeFiles/edit_cache.dir
+C:/Users/Caska/Desktop/projects/2025-agrobot-pid-autotune/CMakeFiles/rebuild_cache.dir
+C:/Users/Caska/Desktop/projects/2025-agrobot-pid-autotune/cmake/stm32cubemx/CMakeFiles/edit_cache.dir
+C:/Users/Caska/Desktop/projects/2025-agrobot-pid-autotune/cmake/stm32cubemx/CMakeFiles/rebuild_cache.dir
