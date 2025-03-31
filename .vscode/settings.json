@@ -3,6 +3,11 @@
         "main.h": "c",
         "matlab_serial.h": "c",
         "stm32f1xx_hal.h": "c",
-        "stm32f1xx_hal_conf.h": "c"
-    }
+        "stm32f1xx_hal_conf.h": "c",
+        "dma.h": "c",
+        "usart.h": "c",
+        "tim.h": "c",
+        "can.h": "c"
+    },
+    "cortex-debug.variableUseNaturalFormat": true
 }

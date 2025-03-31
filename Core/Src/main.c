@@ -19,13 +19,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "can.h"
+#include "dma.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,18 +49,47 @@ static struct {
 	float error_end;
 }PID_speed;
 
+uint32_t TxMailbox = 0;
+
 static  CAN_TxHeaderTypeDef angle = {
-  .DLC = 7,
-  .StdId = 0x01,
+  .DLC = 4,
+  .StdId = 0x12,
   .IDE = CAN_ID_STD,
   .RTR = CAN_RTR_DATA,
   .TransmitGlobalTime = 0,
 };
-uint8_t speed_control_data[7];
+static uint8_t angle_request[4] = {
+  0x04, 0x12, 0x01, 0x00
+};
+
+static  CAN_TxHeaderTypeDef speed = {
+  .DLC = 4,
+  .StdId = 0x12,
+  .IDE = CAN_ID_STD,
+  .RTR = CAN_RTR_DATA,
+  .TransmitGlobalTime = 0,
+};
+uint8_t speed_request[7] = {
+  0x04, 0x12, 0x0A, 0x00
+};
+
+static CAN_RxHeaderTypeDef encoder_answer = {
+  .DLC = 7,
+  .StdId = 0x12,
+  .IDE = CAN_ID_STD,
+  .RTR = CAN_RTR_DATA,
+  .Timestamp = 0x00,
+};
+uint8_t encoder_data[7];
 
 matlab_serial_t serial;
-float matlab_pid_ref[2] = {0.4, -0.3};
+float matlab_pid_ref[2] = {0.0, 0.0};
 float matlab_pid_duty = 0.0;
+uint32_t hal_delay = 0;
+
+float angle_recv = 0.0;
+float speed_recv = 0.0;
+uint32_t err_c = 0x00;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -86,7 +116,23 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static void driver_steer_set_duty(float duty)
+{
+	if(duty > 1.0) duty = 1.0;
+	if(duty < -1.0) duty = -1.0;
+  if(isnan(duty) || isinf(duty)) duty = 0.0;
 
+
+	if(duty >= 0.0)
+	{
+    TIM4->CCR1 = (uint32_t)(TIM4->ARR * duty);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+	} else
+	{
+    TIM4->CCR1 = (uint32_t)(TIM4->ARR * -duty);
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+	}
+}
 /* USER CODE END 0 */
 
 /**
@@ -118,31 +164,84 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_CAN_Init();
   MX_TIM4_Init();
   MX_USART1_UART_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  // HAL_CAN_Start(&hcan);
-  // HAL_CAN_ActivateNotification(&hcan, );
-  // HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-  // HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-
-  //set_duty(0.0);
+  HAL_CAN_Start(&hcan);
+  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_ERROR | CAN_IT_BUSOFF | CAN_IT_LAST_ERROR_CODE);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
   matlab_serial_init_hil(serial, huart1, 0x3A, 0x0D0A, matlab_pid_ref, matlab_pid_duty);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint32_t prev_tick, cur_tick, err_count_tick;
+  cur_tick = HAL_GetTick();
+  prev_tick = HAL_GetTick();
+  // err_count_tick = HAL_GetTick();
+  //matlab_pid_ref[0] = 1.570785;
+  //status_t ret = RECEIVING_ERROR;
+  //driver_steer_set_duty(0.1);
   while (1)
   {
-    matlab_serial_receive_common(&serial, 100);
-    HAL_Delay(100);
+    cur_tick = HAL_GetTick();
+    if(cur_tick - prev_tick >= 10)
+    {
+      prev_tick = cur_tick;
+      HAL_CAN_AddTxMessage(&hcan, &angle, angle_request, &TxMailbox);
+      HAL_CAN_AddTxMessage(&hcan, &speed, speed_request, &TxMailbox);
+      matlab_pid_ref[0] = angle_recv;
+      matlab_pid_ref[1] = speed_recv;
+      matlab_serial_send(&serial, 1);
+    }
+    driver_steer_set_duty(matlab_pid_duty);
+
+    //matlab_serial_send(&serial, 10);
+    // cur_tick = HAL_GetTick();
+    // ret = matlab_serial_receive_common(&serial, 10);
+    // driver_steer_set_duty(matlab_pid_duty);
+    // if(ret != STATUS_OK) err_c++;
+    // if( cur_tick - prev_tick >= 10)
+    // {
+    //   prev_tick = cur_tick;
+
+
+    //   matlab_pid_ref[1] = speed_recv;
+    //   matlab_serial_send(&serial, 10);
+    // }
+    // if(cur_tick - err_count_tick >= 1000)
+    // {
+    //   err_count_tick = cur_tick;
+    //   err_c = 0;
+    // }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
+}
+
+
+// Receive to IDLE flag
+status_t ret = RECEIVING_ERROR;
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
+{
+  (void)Size; // warning avoiding
+  if(huart == &huart1)
+  {
+    ret = matlab_serial_parse_rx(&serial);
+    if(ret != STATUS_OK)
+    {
+      err_c++;
+    }
+  }
 }
 
 /**
@@ -199,6 +298,40 @@ void set_duty(float duty)
 			TIM4->CCR1 = (uint32_t)(TIM4->ARR * -duty);
 			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
 	}
+}
+int32_t data_speed_in = 0x00;
+void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan)
+{
+  if(HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &encoder_answer, encoder_data) == HAL_OK)
+  {
+    uint8_t message_type = encoder_data[2];
+
+    switch(message_type)
+    {
+      case 0x01:
+      {
+        uint32_t data_angle_in = 0x00;
+        data_angle_in += ((uint32_t)encoder_data[6]) << 24;
+        data_angle_in += ((uint32_t)encoder_data[5]) << 16;
+        data_angle_in += ((uint32_t)encoder_data[4]) << 8;
+        data_angle_in += ((uint32_t)encoder_data[3]);
+  
+        angle_recv = ((float)data_angle_in) * 360.0 / 1024.0; 
+        break;
+      }
+      case 0x0A:
+      {
+        data_speed_in = 0x00;
+        data_speed_in += ((uint32_t)encoder_data[6]) << 24;
+        data_speed_in += ((uint32_t)encoder_data[5]) << 16;
+        data_speed_in += ((uint32_t)encoder_data[4]) << 8;
+        data_speed_in += ((uint32_t)encoder_data[3]);
+  
+        speed_recv = ((float)data_speed_in) * 0.61328125;         
+        break;
+      }
+    }
+  }
 }
 
 void pid_init(void)
